@@ -1,66 +1,120 @@
 /* eslint-disable */
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { auth, database } from "../misc/firebase";
+import React, { createContext, useState, useContext, useEffect } from 'react';
+import {
+  serverTimestamp,
+  ref,
+  onValue,
+  onDisconnect,
+  set,
+  off,
+} from 'firebase/database';
+import { getToken } from 'firebase/messaging';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, database, fcmVapidKey, messaging } from '../misc/firebase';
 
+export const isOfflineForDatabase = {
+  state: 'offline',
+  last_changed: serverTimestamp(),
+};
 
+const isOnlineForDatabase = {
+  state: 'online',
+  last_changed: serverTimestamp(),
+};
 
 const ProfileContext = createContext();
 
 export const ProfileProvider = ({ children }) => {
-    const [profile, setProfile] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(()=>{
+  useEffect(() => {
+    let userRef;
+    let userStatusRef;
 
-        let userRef;
+    const authUnsub = onAuthStateChanged(auth, async authObj => {
+      if (authObj) {
+        userStatusRef = ref(database, `/status/${authObj.uid}`);
+        userRef = ref(database, `/profiles/${authObj.uid}`);
 
-  const authUnsub = auth.onAuthStateChanged( authObj =>{
+        onValue(userRef, snap => {
+          const { name, createdAt, avatar } = snap.val();
 
-            if(authObj){
+          const data = {
+            name,
+            createdAt,
+            avatar,
+            uid: authObj.uid,
+            email: authObj.email,
+          };
 
-                userRef =  database.ref(`/profiles/${authObj.uid}`);
+          setProfile(data);
+          setIsLoading(false);
+        });
 
-                userRef.on('value', snap =>{
-                    const {name, createdAt }= snap.val();
+        onValue(ref(database, '.info/connected'), snapshot => {
+          if (!!snapshot.val() === false) {
+            return;
+          }
 
-                    const data = {
-                        name,
-                        createdAt,
-                        uid: authObj.uid,
-                        email: authObj.email
-                    };
+          onDisconnect(userStatusRef)
+            .set(isOfflineForDatabase)
+            .then(() => {
+              set(userStatusRef, isOnlineForDatabase);
+            });
+        });
 
-                   
-                    setProfile(data);
-                    setIsLoading(false);
-                });
-            
-            }else{
-
-                if(userRef){
-                    userRef.off()
-                }
-                setProfile(null);
-                setIsLoading(false);
+        if (messaging) {
+          try {
+            const currentToken = await getToken(messaging, {
+              vapidKey: fcmVapidKey,
+            });
+            if (currentToken) {
+              await set(
+                ref(database, `/fcm_tokens/${currentToken}`),
+                authObj.uid
+              );
             }
-        })
-        return () =>{
-            authUnsub();
-            
-            if(userRef){
-                userRef.off();
-            }
+          } catch (err) {
+            console.log('An error occurred while retrieving token. ', err);
+          }
+        }
+      } else {
+        if (userRef) {
+          off(userRef);
         }
 
-    }, [])
+        if (userStatusRef) {
+          off(userStatusRef);
+        }
 
-    
+        off(ref(database, '.info/connected'));
 
-    return (
-    <ProfileContext.Provider value={{isLoading, profile}}>
-        {children}
-        </ProfileContext.Provider>
-    )
+        setProfile(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      authUnsub();
+
+      off(ref(database, '.info/connected'));
+
+      if (userRef) {
+        off(userRef);
+      }
+
+      if (userStatusRef) {
+        off(userStatusRef);
+      }
+    };
+  }, []);
+
+  return (
+    <ProfileContext.Provider value={{ isLoading, profile }}>
+      {children}
+    </ProfileContext.Provider>
+  );
 };
 
 export const useProfile = () => useContext(ProfileContext);

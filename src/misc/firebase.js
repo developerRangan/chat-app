@@ -1,16 +1,40 @@
-import firebase from 'firebase/app';
-import 'firebase/auth';
-import 'firebase/database';
+import { Notification as Toast } from 'rsuite';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getDatabase } from 'firebase/database';
+import { getStorage } from 'firebase/storage';
+import { getMessaging, isSupported, onMessage } from 'firebase/messaging';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { isLocalhost } from './helpers';
 
 const config = {
-    apiKey: "AIzaSyAlmrXto0Xdlprb5tydOCzjDhqSZ2n2wis",
-    authDomain: "chat-web-app-9c97d.firebaseapp.com",
-    projectId: "chat-web-app-9c97d",
-    storageBucket: "chat-web-app-9c97d.appspot.com",
-    messagingSenderId: "555238010797",
-    appId: "1:555238010797:web:a59b212344c808988cbb24"
-  };
+  apiKey: 'AIzaSyAKGRssxY4OW9um6RlSbbQ1Fh_lgdWfoPs',
+  authDomain: 'chat-web-app-4ee4c.firebaseapp.com',
+  databaseURL: 'https://chat-web-app-4ee4c.firebaseio.com',
+  projectId: 'chat-web-app-4ee4c',
+  storageBucket: 'chat-web-app-4ee4c.appspot.com',
+  messagingSenderId: '167319830934',
+  appId: '1:167319830934:web:419e220f9fdcd15ea25db7',
+};
 
-const app = firebase.initializeApp(config);
-export const auth = app.auth();
-export const database = app.database();
+export const fcmVapidKey =
+  'BLs_I-HQyrAuUJJh8H3U0vtHGhVhXLMqoVoomeNL90GMKm0-o7sSoN9CJYRiBAVz-Yi7ZAni8mKateJfDwodTnw';
+
+const app = initializeApp(config);
+export const auth = getAuth(app);
+export const database = getDatabase(app);
+export const storage = getStorage(app);
+export const functions = getFunctions(app, 'europe-west3');
+
+export const messaging = isSupported() ? getMessaging(app) : null;
+
+if (messaging) {
+  onMessage(messaging, ({ notification }) => {
+    const { title, body } = notification;
+    Toast.info({ title, description: body, duration: 0 });
+  });
+}
+
+if (isLocalhost) {
+  connectFunctionsEmulator(functions, 'localhost', 5001);
+}
